@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Turbo Asphalt 3D – Ultimate Racing Challenge</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: sans-serif; }
+    canvas { display: block; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 18px;
+      z-index: 10;
+    }
+    #controls {
+      position: absolute;
+      bottom: 20px;
+      left: 10px;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">Speed: 0 km/h | Lap: 1/3 | Nitro: 100%</div>
+  <div id="controls">Use WASD / Arrow keys to drive, Space for Nitro</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/controls/OrbitControls.js"></script>
+
+  <script>
+    // Basic Three.js setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Lighting
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5, 10, 5);
+    scene.add(light);
+
+    // Ground (track)
+    const trackGeometry = new THREE.PlaneGeometry(100, 500);
+    const trackMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const track = new THREE.Mesh(trackGeometry, trackMaterial);
+    track.rotation.x = -Math.PI / 2;
+    scene.add(track);
+
+    // Player car
+    const carGeometry = new THREE.BoxGeometry(2, 1, 4);
+    const carMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const car = new THREE.Mesh(carGeometry, carMaterial);
+    car.position.set(0, 0.5, -240);
+    scene.add(car);
+
+    // AI car
+    const aiGeometry = new THREE.BoxGeometry(2, 1, 4);
+    const aiMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    const aiCar = new THREE.Mesh(aiGeometry, aiMaterial);
+    aiCar.position.set(2, 0.5, -250);
+    scene.add(aiCar);
+
+    // Camera position
+    camera.position.set(0, 10, -10);
+    camera.lookAt(car.position);
+
+    // Controls
+    const keys = {};
+    document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    // Game variables
+    let speed = 0;
+    let nitro = 100;
+    let lap = 1;
+    let lapsCompleted = 0;
+    let lastZ = car.position.z;
+    let nitroActive = false;
+
+    // Audio
+    const engineSfx = new Audio('https://www.soundjay.com/transport/car-engine-01.mp3');
+    engineSfx.loop = true;
+    engineSfx.volume = 0.2;
+    engineSfx.play();
+
+    const nitroSfx = new Audio('https://www.soundjay.com/button/beep-06.mp3');
+
+    // Game loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Nitro boost
+      if (keys[' '] && nitro > 0) {
+        nitroActive = true;
+        nitro -= 0.5;
+        speed += 0.1;
+        nitroSfx.play();
+      } else {
+        nitroActive = false;
+        if (nitro < 100) nitro += 0.2;
+      }
+
+      // Controls
+      if (keys['w'] || keys['arrowup']) speed += 0.05;
+      if (keys['s'] || keys['arrowdown']) speed -= 0.05;
+      if (keys['a'] || keys['arrowleft']) car.position.x -= 0.2;
+      if (keys['d'] || keys['arrowright']) car.position.x += 0.2;
+
+      // Clamp and friction
+      speed *= 0.98;
+      speed = Math.max(0, Math.min(speed, 2));
+      car.position.z += speed;
+
+      // AI car logic
+      aiCar.position.z += 1.2;
+      aiCar.position.x = Math.sin(Date.now() * 0.002) * 5;
+
+      // Lap tracking
+      if (car.position.z > 250) {
+        lapsCompleted++;
+        car.position.z = -240;
+        lap++;
+        if (lap > 3) alert("🏁 You finished the race!");
+      }
+
+      // Camera follow
+      camera.position.set(car.position.x, car.position.y + 10, car.position.z - 10);
+      camera.lookAt(car.position);
+
+      // Update HUD
+      document.getElementById("hud").innerText =
+        `Speed: ${(speed * 100).toFixed(0)} km/h | Lap: ${lap}/3 | Nitro: ${nitro.toFixed(0)}%`;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Resize handling
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
