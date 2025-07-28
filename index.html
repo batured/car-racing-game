@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Turbo Asphalt 3D – Ultimate Racing Challenge</title>
+  <title>Turbo Sky Race 3D</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #000; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000; font-family: Arial, sans-serif; }
     #hud {
       position: absolute;
       top: 10px;
@@ -19,6 +20,7 @@
       left: 10px;
       color: white;
       font-size: 14px;
+      z-index: 10;
     }
   </style>
 </head>
@@ -29,143 +31,142 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
 
   <script>
-    // Scene setup
+    // Scene Setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x202020);
+    scene.background = new THREE.Color(0x87ceeb); // Sky blue
 
-    // Camera setup
+    // Camera
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 8, -15);
+    camera.position.set(0, 5, -10);
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
 
     // Lighting
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(10, 20, 10);
-    light.castShadow = true;
     scene.add(light);
 
     const ambientLight = new THREE.AmbientLight(0x404040);
     scene.add(ambientLight);
 
-    // Ground / Track
-    const roadGeometry = new THREE.PlaneGeometry(10, 1000);
-    const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const road = new THREE.Mesh(roadGeometry, roadMaterial);
-    road.rotation.x = -Math.PI / 2;
-    road.receiveShadow = true;
-    scene.add(road);
-
-    // Side environment
-    const createTree = (x, z) => {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1), new THREE.MeshStandardMaterial({ color: 0x8b4513 }));
-      trunk.position.set(x, 0.5, z);
-      trunk.castShadow = true;
-      scene.add(trunk);
-
-      const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.7), new THREE.MeshStandardMaterial({ color: 0x228B22 }));
-      leaves.position.set(x, 1.4, z);
-      leaves.castShadow = true;
-      scene.add(leaves);
-    };
-    for (let i = -500; i < 500; i += 10) {
-      createTree(-7, i);
-      createTree(7, i + 5);
+    // Track - Floating road
+    const trackGroup = new THREE.Group();
+    for (let i = 0; i < 200; i++) {
+      const segment = new THREE.Mesh(
+        new THREE.BoxGeometry(6, 0.5, 5),
+        new THREE.MeshStandardMaterial({ color: 0x222222 })
+      );
+      segment.position.z = i * 5;
+      segment.position.y = Math.sin(i * 0.2) * 2;
+      trackGroup.add(segment);
     }
+    scene.add(trackGroup);
 
-    // Player car
-    const carBody = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
-    carBody.castShadow = true;
-    carBody.position.set(0, 0.5, -490);
-    scene.add(carBody);
+    // Side rails
+    function addRail(xOffset) {
+      for (let i = 0; i < 200; i++) {
+        const rail = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 1, 5),
+          new THREE.MeshStandardMaterial({ color: 0xff6600 })
+        );
+        rail.position.set(xOffset, 0.75 + Math.sin(i * 0.2) * 2, i * 5);
+        scene.add(rail);
+      }
+    }
+    addRail(3.5);
+    addRail(-3.5);
 
-    // AI car
-    const aiCar = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 4), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
-    aiCar.position.set(2, 0.5, -500);
-    aiCar.castShadow = true;
+    // Player Car
+    const car = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 1.5), new THREE.MeshStandardMaterial({ color: 0x007700 }));
+    top.position.y = 0.4;
+    top.position.z = -0.5;
+    car.add(body);
+    car.add(top);
+    car.position.set(0, 0.5, 0);
+    scene.add(car);
+
+    // AI Car
+    const aiCar = new THREE.Mesh(new THREE.BoxGeometry(2, 0.5, 4), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+    aiCar.position.set(2, 0.5, -5);
     scene.add(aiCar);
 
-    // Game state
+    // Game variables
+    let keys = {};
     let speed = 0;
     let nitro = 100;
     let lap = 1;
     const maxLaps = 3;
-    let keys = {};
 
     document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
     document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-    const engineSfx = new Audio('https://www.soundjay.com/transport/car-engine-01.mp3');
-    engineSfx.loop = true;
-    engineSfx.volume = 0.2;
-    engineSfx.play();
+    // Game loop
+    function animate() {
+      requestAnimationFrame(animate);
 
-    const nitroSfx = new Audio('https://www.soundjay.com/button/beep-06.mp3');
-
-    function updateControls() {
-      if (keys['w'] || keys['arrowup']) speed += 0.04;
-      if (keys['s'] || keys['arrowdown']) speed -= 0.02;
-      if (keys['a'] || keys['arrowleft']) carBody.position.x -= 0.2;
-      if (keys['d'] || keys['arrowright']) carBody.position.x += 0.2;
-
+      // Nitro boost
       if (keys[' '] && nitro > 0) {
-        speed += 0.1;
+        speed += 0.08;
         nitro -= 0.5;
-        nitroSfx.play();
       }
 
-      speed *= 0.98;
+      // Movement
+      if (keys['w'] || keys['arrowup']) speed += 0.03;
+      if (keys['s'] || keys['arrowdown']) speed -= 0.02;
+      if (keys['a'] || keys['arrowleft']) car.position.x -= 0.15;
+      if (keys['d'] || keys['arrowright']) car.position.x += 0.15;
+
+      speed *= 0.98; // Friction
       speed = Math.max(0, Math.min(speed, 2.5));
-      carBody.position.z += speed;
-    }
+      car.position.z += speed;
 
-    function updateAI() {
+      // Align car to road curve
+      const segmentIndex = Math.floor(car.position.z / 5);
+      if (trackGroup.children[segmentIndex]) {
+        car.position.y = trackGroup.children[segmentIndex].position.y + 0.5;
+      }
+
+      // AI Movement
       aiCar.position.z += 1.5;
-      aiCar.position.x = Math.sin(Date.now() * 0.001) * 3;
-    }
+      aiCar.position.x = Math.sin(aiCar.position.z * 0.05) * 2;
+      const aiSegment = Math.floor(aiCar.position.z / 5);
+      if (trackGroup.children[aiSegment]) {
+        aiCar.position.y = trackGroup.children[aiSegment].position.y + 0.5;
+      }
 
-    function updateCamera() {
-      camera.position.lerp(new THREE.Vector3(
-        carBody.position.x,
-        carBody.position.y + 6,
-        carBody.position.z - 12
-      ), 0.1);
-      camera.lookAt(carBody.position);
-    }
-
-    function updateHUD() {
-      document.getElementById("hud").innerText =
-        `Speed: ${(speed * 100).toFixed(0)} km/h | Lap: ${lap}/${maxLaps} | Nitro: ${Math.max(0, nitro).toFixed(0)}%`;
-    }
-
-    function checkLap() {
-      if (carBody.position.z >= 500) {
-        carBody.position.z = -490;
+      // Lap counting
+      if (car.position.z > 995) {
         lap++;
         if (lap > maxLaps) {
           alert("🏁 Race Finished!");
           lap = 1;
+          car.position.set(0, 0.5, 0);
+          aiCar.position.set(2, 0.5, -5);
           nitro = 100;
+        } else {
+          car.position.z = 0;
         }
       }
-    }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      updateControls();
-      updateAI();
-      updateCamera();
-      updateHUD();
-      checkLap();
+      // Camera follow
+      camera.position.lerp(new THREE.Vector3(car.position.x, car.position.y + 5, car.position.z - 10), 0.1);
+      camera.lookAt(car.position);
+
+      // HUD update
+      document.getElementById("hud").innerText =
+        `Speed: ${(speed * 100).toFixed(0)} km/h | Lap: ${lap}/${maxLaps} | Nitro: ${Math.max(0, nitro).toFixed(0)}%`;
+
       renderer.render(scene, camera);
     }
 
     animate();
 
+    // Resize
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
